@@ -55,7 +55,7 @@ class BellaModel:
 
         inp_img = Input(shape=final_image_shape, name='input')
         #... (omitted for brevity, the rest of the model building code goes here) ...
-
+        #jk
         x_g_j = Model(inputs=[inp_img,g_input], outputs=[j_out])
 
         return i_x_i, i_x, squeze_x, x_g_j
