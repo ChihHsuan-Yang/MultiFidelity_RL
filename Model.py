@@ -1,14 +1,21 @@
-import numpy as np
+import tensorflow as tf
 import keras
+print("TensorFlow version:", tf.__version__)
+print("Keras version:", keras.__version__)
+
+
+import numpy as np
 from keras.layers import Conv2D, Activation, BatchNormalization, MaxPooling2D, Dropout, UpSampling2D, Flatten, Dense, Input
 from keras.models import Model
 from sklearn.model_selection import train_test_split
 from keras import layers
+from keras.models import load_model
+from keras.layers import InputLayer
 
 class BellaModel:
     def __init__(self):
         self.save_folder = '/work/baskargroup/bella/data_efficient/coms590_rl/report/test/'
-        self.path = '/work/baskarg/bella/data_efficient/data/'
+        self.path = '/work/baskargroup/bella/data_efficient/data/'
     
     def load_data(self):
         npy_data = np.load(self.path + 'augmented_JF_filtered_norm_train.npy', allow_pickle=True)
@@ -91,18 +98,16 @@ class BellaModel:
         x3 = self.conv2d_block(x2, 3, kernel_size=3, batch_norm=batch_norm)
         x4 = MaxPooling2D(shape3)(x3)
         x5 = self.conv2d_block(x4, 1, kernel_size=3, batch_norm=batch_norm)
-        squeze_x = Model(inputs=inp_img, outputs=x5)
-
-        # g input
-        g_input = Input(shape=(3,), name='g_input')
+        #squeze_x = Model(inputs=inp_img, outputs=x5)
         x = Flatten()(x5)
 
-        # build x_g_j part
-        j0 = layers.concatenate([x, g_input], axis=-1)
-        j_out = layers.Dense(1, activation='relu')(j0)
-        x_g_j = Model(inputs=[inp_img, g_input], outputs=[j_out])
+        # build x_j part
+        
+        j_out = layers.Dense(1, activation='relu')(x)
+        i_x_j = Model(inputs=inp_img, outputs=j_out)
+        x_j = Model(inputs = encode_output ,outputs=j_out)
 
-        return i_x_i, i_x, squeze_x, x_g_j
+        return i_x_i, i_x_j
 
 
     def save_latent_space(self, i_x, train_image, test_image):
@@ -114,10 +119,41 @@ class BellaModel:
         np.save(self.save_folder + 'test_latent_space', np.asarray(test_latent_space))
 
     # Add this new method to the BellaModel class
-    def modify_and_decode_latent_space(self, i_x_i, train_latent_space, modification_factor=0.1):
+    def modify_and_decode_latent_space(self, i_x_i,x_i, train_latent_space, modification_factor=0.1):
         modified_latent_space = train_latent_space + np.random.normal(0, modification_factor, train_latent_space.shape)
         decoded_images = i_x_i.predict(modified_latent_space)
+        predict_j_new = x_i.predict(modified_latent_space)
+        predict_j_old = x_i.predict(train_latent_space)
+
         return decoded_images
+
+def extract_submodels(i_x_i, i_x_j):
+    # Split i_x_i model into i_x and x_i models
+    i_x_input = Input(shape=(128, 128, 1), name='input_img')
+    x = i_x_input
+    for layer in i_x_i.layers[:i_x_i.layers.index(i_x_i.get_layer("activation_3")) + 1]:
+        x = layer(x)
+    i_x = Model(inputs=i_x_input, outputs=x, name="i_x_model")
+
+    x_i_input = Input(shape=(16, 16, 1), name='latent_input')
+    x = x_i_input
+    for layer in i_x_i.layers[i_x_i.layers.index(i_x_i.get_layer("conv2d_4")):]:
+        x = layer(x)
+    x_i = Model(inputs=x_i_input, outputs=x, name="x_i_model")
+
+    # Split i_x_j model into x_j model
+    x_j_input = Input(shape=(16, 16, 1), name='latent_input')
+    x = x_j_input
+    for layer in i_x_j.layers[i_x_j.layers.index(i_x_j.get_layer("conv2d_8")):]:
+        x = layer(x)
+    x_j = Model(inputs=x_j_input, outputs=x, name="x_j_model")
+
+    return i_x, x_j, x_i
+
+
+
+
+
 
 if __name__ == '__main__':
     
@@ -129,17 +165,51 @@ if __name__ == '__main__':
 
     bella_model.save_train_test_data(train_image, test_image, train_current, test_current, train_ff, test_ff)
     print('start define model')
-    i_x_i, i_x, squeze_x, x_g_j = bella_model.build_model()
+    i_x_i, i_x_j  = bella_model.build_model()
 
-    auto_folder = '/work/baskarg/bella/data_efficient/auto_encoder/'
+    auto_folder = '/work/baskargroup/bella/data_efficient/models/autoencoder/'
     i_x_i_checkpoint_path_old =  auto_folder + "i_x_i_00014.ckpt"
-    print('start load weight')
+    print('start  auto load weight')
     i_x_i.load_weights(i_x_i_checkpoint_path_old)
+    print('finish load model')
+
+    print('start  i_x_j load weight')
+    @tf.function
+    def w_mse(y_true,y_pred):
+        return kb.mean(kb.sum(y_true*(y_true-y_pred)**2))*0.008
+    i_x_j_path = "/work/baskargroup/bella/keras_3_models/data_efficient/models/without_g/100%/model_i_x_j.h5"
+    i_x_j = i_x_j = load_model(i_x_j_path, custom_objects={'w_mse': w_mse})
+    print('finish i_x_j model')
+
+    print('for i_x_i ')
+    for layer in i_x_i.layers:
+        print(layer.name, layer.output_shape)
+    print('for i_x_j ')
+    for layer in i_x_j.layers:
+        print(layer.name, layer.output_shape)
+
+    #extract sub models
+    print('start  extract_submodels')
+    i_x, x_j, x_i = extract_submodels(i_x_i, i_x_j)
+    print('finish extract_submodels')
+    print('for i_x ')
+    for layer in i_x.layers:
+        if not isinstance(layer, InputLayer):
+            print(layer.name, layer.output_shape)
+    print('for x_j ')
+    for layer in x_j.layers:
+        if not isinstance(layer, InputLayer):
+            print(layer.name, layer.output_shape)   
+    print('for x_i ')
+    for layer in x_i.layers:
+        if not isinstance(layer, InputLayer):
+            print(layer.name, layer.output_shape)
 
     bella_model.save_latent_space(i_x, train_image, test_image)
+
     # Add these lines after saving the latent space
     train_latent_space = np.load(bella_model.save_folder + 'train_latent_space.npy')
-    modified_decoded_images = bella_model.modify_and_decode_latent_space(i_x_i, train_latent_space)
+    modified_decoded_images = bella_model.modify_and_decode_latent_space(i_x_i,x_i, train_latent_space)
     # Save the modified decoded images if needed
     np.save(bella_model.save_folder + 'modified_decoded_images', np.asarray(modified_decoded_images))
 
