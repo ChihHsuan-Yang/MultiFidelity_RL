@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 from keras import layers
 from keras.models import load_model
 from keras.layers import InputLayer
+import matplotlib.pyplot as plt
 
 class BellaModel:
     def __init__(self):
@@ -119,13 +120,45 @@ class BellaModel:
         np.save(self.save_folder + 'test_latent_space', np.asarray(test_latent_space))
 
     # Add this new method to the BellaModel class
-    def modify_and_decode_latent_space(self, i_x_i,x_i, train_latent_space, modification_factor=0.1):
+    def modify_and_decode_random_images(self,i_x,x_i,x_j, random_images, modification_factor=0.1):
+        train_latent_space = i_x.predict(random_images)
         modified_latent_space = train_latent_space + np.random.normal(0, modification_factor, train_latent_space.shape)
-        decoded_images = i_x_i.predict(modified_latent_space)
-        predict_j_new = x_i.predict(modified_latent_space)
-        predict_j_old = x_i.predict(train_latent_space)
+        decoded_images = x_i.predict(modified_latent_space)
+        predict_j_new = x_j.predict(modified_latent_space)
+        predict_j_old = x_j.predict(train_latent_space)
+        # plot here
+        self.plot_images(random_images, train_latent_space, modified_latent_space, decoded_images, predict_j_old, predict_j_new)
 
-        return decoded_images
+    def plot_images(self,train_image, train_latent_space, modified_latent_space, decoded_images, predict_j_old, predict_j_new):
+        num_rows = train_image.shape[0]
+
+        fig, axes = plt.subplots(num_rows, 4, figsize=(10, num_rows * 2))
+
+        for i in range(num_rows):
+            # Plot original image
+            axes[i, 0].imshow(train_image[i].squeeze(), cmap='gray')
+            axes[i, 0].set_title(f'Original image\nLabel: {predict_j_old[i]}')
+            axes[i, 0].axis('off')
+
+            # Plot original latent space
+            axes[i, 1].imshow(train_latent_space[i].reshape(16, 16), cmap='gray')
+            axes[i, 1].set_title('Original Latent Space')
+            axes[i, 1].axis('off')
+
+            # Plot new latent space
+            axes[i, 2].imshow(modified_latent_space[i].reshape(16, 16), cmap='gray')
+            axes[i, 2].set_title('New Latent Space')
+            axes[i, 2].axis('off')
+
+            # Plot new images
+            axes[i, 3].imshow(decoded_images[i].squeeze(), cmap='gray')
+            axes[i, 3].set_title(f'New Images\nLabel: {predict_j_new[i]}')
+            axes[i, 3].axis('off')
+
+        plt.tight_layout()
+        plt.savefig(self.save_folder + 'elporing_img.png')
+        plt.show()
+
 
 def extract_submodels(i_x_i, i_x_j):
     # Split i_x_i model into i_x and x_i models
@@ -208,8 +241,13 @@ if __name__ == '__main__':
     bella_model.save_latent_space(i_x, train_image, test_image)
 
     # Add these lines after saving the latent space
-    train_latent_space = np.load(bella_model.save_folder + 'train_latent_space.npy')
-    modified_decoded_images = bella_model.modify_and_decode_latent_space(i_x_i,x_i, train_latent_space)
-    # Save the modified decoded images if needed
-    np.save(bella_model.save_folder + 'modified_decoded_images', np.asarray(modified_decoded_images))
+    #train_latent_space = np.load(bella_model.save_folder + 'train_latent_space.npy')
+    # random 5 images 
+    num_images = train_image.shape[0]
+    num_random_images = 5
 
+    random_indices = np.random.randint(0, num_images, size=num_random_images)
+    random_images = train_image[random_indices]
+
+    bella_model.modify_and_decode_random_images(i_x,x_i,x_j, random_images)
+    
