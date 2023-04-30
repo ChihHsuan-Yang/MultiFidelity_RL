@@ -12,10 +12,11 @@ from keras import layers
 from keras.models import load_model
 from keras.layers import InputLayer
 import matplotlib.pyplot as plt
+from RL import *
 
 class BellaModel:
     def __init__(self):
-        self.save_folder = '/work/baskargroup/bella/data_efficient/coms590_rl/report/test/'
+        self.save_folder = '/work/baskargroup/bella/data_efficient/coms590_rl/report/test_rl/'
         self.path = '/work/baskargroup/bella/data_efficient/data/'
     
     def load_data(self):
@@ -119,17 +120,18 @@ class BellaModel:
         test_latent_space = test_latent_space.reshape((len(test_image),16,16))
         np.save(self.save_folder + 'test_latent_space', np.asarray(test_latent_space))
 
-    # Add this new method to the BellaModel class
-    def modify_and_decode_random_images(self,i_x,x_i,x_j, random_images, modification_factor=0.1):
+    def modify_and_decode_random_images(self, i_x, x_i, x_j, random_images):
         train_latent_space = i_x.predict(random_images)
-        modified_latent_space = train_latent_space + np.random.normal(0, modification_factor, train_latent_space.shape)
-        decoded_images = x_i.predict(modified_latent_space)
-        predict_j_new = x_j.predict(modified_latent_space)
         predict_j_old = x_j.predict(train_latent_space)
-        # plot here
-        self.plot_images(random_images, train_latent_space, modified_latent_space, decoded_images, predict_j_old, predict_j_new)
+        for modification_index, modification_factor in enumerate(np.arange(0.1, 1.1, 0.1), 1): 
+            modified_latent_space = train_latent_space + np.random.normal(0, modification_factor, train_latent_space.shape)
+            decoded_images = x_i.predict(modified_latent_space)
+            predict_j_new = x_j.predict(modified_latent_space)
+            
+            # plot here
+            self.plot_images(random_images, train_latent_space, modified_latent_space, decoded_images, predict_j_old, predict_j_new, modification_index)
 
-    def plot_images(self,train_image, train_latent_space, modified_latent_space, decoded_images, predict_j_old, predict_j_new):
+    def plot_images(self, train_image, train_latent_space, modified_latent_space, decoded_images, predict_j_old, predict_j_new, modification_index):
         num_rows = train_image.shape[0]
 
         fig, axes = plt.subplots(num_rows, 4, figsize=(10, num_rows * 2))
@@ -156,8 +158,9 @@ class BellaModel:
             axes[i, 3].axis('off')
 
         plt.tight_layout()
-        plt.savefig(self.save_folder + 'elporing_img.png')
+        plt.savefig(self.save_folder + f'random_noise_img_mod_{modification_index}.png')
         plt.show()
+
 
 
 def extract_submodels(i_x_i, i_x_j):
@@ -183,11 +186,6 @@ def extract_submodels(i_x_i, i_x_j):
 
     return i_x, x_j, x_i
 
-
-
-
-
-
 if __name__ == '__main__':
     
     bella_model = BellaModel()
@@ -196,7 +194,7 @@ if __name__ == '__main__':
     print('start split data')
     train_image, test_image, train_current, test_current, train_ff, test_ff = train_test_split(data, current, ff, test_size=0.2, random_state=57)
 
-    bella_model.save_train_test_data(train_image, test_image, train_current, test_current, train_ff, test_ff)
+    #bella_model.save_train_test_data(train_image, test_image, train_current, test_current, train_ff, test_ff)
     print('start define model')
     i_x_i, i_x_j  = bella_model.build_model()
 
@@ -238,7 +236,7 @@ if __name__ == '__main__':
         if not isinstance(layer, InputLayer):
             print(layer.name, layer.output_shape)
 
-    bella_model.save_latent_space(i_x, train_image, test_image)
+    #bella_model.save_latent_space(i_x, train_image, test_image)
 
     # Add these lines after saving the latent space
     #train_latent_space = np.load(bella_model.save_folder + 'train_latent_space.npy')
@@ -250,4 +248,11 @@ if __name__ == '__main__':
     random_images = train_image[random_indices]
 
     bella_model.modify_and_decode_random_images(i_x,x_i,x_j, random_images)
-    
+
+    # train the ppo
+    print('start training PPO')
+    ppo_agent = train_ppo_agent(i_x, x_i, x_j, train_images, max_iterations=100, modification_factor=0.1, total_timesteps=50000)
+    print('finish train ppo')
+
+
+
