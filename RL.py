@@ -3,7 +3,7 @@ import numpy as np
 from gym import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-
+#comment
 class LatentSpaceEnvironment(gym.Env):
     def __init__(self, i_x, x_i, x_j, train_images, max_iterations=100, modification_factor=0.1, step_size=0.1):
         super(LatentSpaceEnvironment, self).__init__()
