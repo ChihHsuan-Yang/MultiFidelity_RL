@@ -16,8 +16,8 @@ from RL import *
 
 class BellaModel:
     def __init__(self):
-        self.save_folder = '/work/baskargroup/bella/data_efficient/coms590_rl/report/test_rl/'
-        self.path = '/work/baskargroup/bella/data_efficient/data/'
+        self.save_folder = '/data/bella/data_efficient/coms590_rl/report/test_rl/'
+        self.path = '/data/bella/data_efficient/data/'
     
     def load_data(self):
         npy_data = np.load(self.path + 'augmented_JF_filtered_norm_train.npy', allow_pickle=True)
@@ -186,6 +186,66 @@ def extract_submodels(i_x_i, i_x_j):
 
     return i_x, x_j, x_i
 
+def modify_and_compare_images(model, i_x, x_i, x_j, ppo_agent, test_images, modification_factor, noise_factor):
+    num_images = test_images.shape[0]
+
+    # Get the latent space of the test images
+    latent_space_test = i_x.predict(test_images)
+
+    # Add random noise to the latent space
+    noisy_latent_space = latent_space_test + np.random.normal(0, noise_factor, latent_space_test.shape)
+
+    # Get RL-modified latent spaces using the PPO agent
+    rl_latent_space = np.array([modify_image_with_ppo_agent(ppo_agent, i_x, x_i, modification_factor, test_images[i]) for i in range(num_images)])
+
+    # Decode the latent spaces back to images
+    initial_images = x_i.predict(latent_space_test)
+    noise_images = x_i.predict(noisy_latent_space)
+    rl_images = x_i.predict(rl_latent_space)
+
+    # Get predicted labels
+    initial_labels = x_j.predict(latent_space_test)
+    noise_labels = x_j.predict(noisy_latent_space)
+    rl_labels = x_j.predict(rl_latent_space)
+
+    # Plot the images and latent spaces
+    fig, axes = plt.subplots(num_images, 6, figsize=(15, num_images * 2))
+
+    for i in range(num_images):
+        # Initial image and latent space
+        axes[i, 0].imshow(initial_images[i].squeeze(), cmap='gray')
+        axes[i, 0].set_title(f'Initial image\nLabel: {initial_labels[i]}')
+        axes[i, 0].axis('off')
+
+        axes[i, 1].imshow(latent_space_test[i].reshape(16, 16), cmap='gray')
+        axes[i, 1].set_title('Initial Latent Space')
+        axes[i, 1].axis('off')
+
+        # Noisy image and latent space
+        axes[i, 2].imshow(noise_images[i].squeeze(), cmap='gray')
+        axes[i, 2].set_title(f'Noisy image\nLabel: {noise_labels[i]}')
+        axes[i, 2].axis('off')
+
+        axes[i, 3].imshow(noisy_latent_space[i].reshape(16, 16), cmap='gray')
+        axes[i, 3].set_title('Noisy Latent Space')
+        axes[i, 3].axis('off')
+
+        # RL image and latent space
+        axes[i, 4].imshow(rl_images[i].squeeze(), cmap='gray')
+        axes[i, 4].set_title(f'RL image\nLabel: {rl_labels[i]}')
+        axes[i, 4].axis('off')
+
+        axes[i, 5].imshow(rl_latent_space[i].reshape(16, 16), cmap='gray')
+        axes[i, 5].set_title('RL Latent Space')
+        axes[i, 5].axis('off')
+
+    plt.tight_layout()
+    plt.savefig(Model.save_folder + f'comaparation_{modification_index}.png')
+    plt.show()
+
+
+
+
 if __name__ == '__main__':
     
     bella_model = BellaModel()
@@ -198,7 +258,7 @@ if __name__ == '__main__':
     print('start define model')
     i_x_i, i_x_j  = bella_model.build_model()
 
-    auto_folder = '/work/baskargroup/bella/data_efficient/models/autoencoder/'
+    auto_folder = '/data/bella/data_efficient/models/autoencoder/'
     i_x_i_checkpoint_path_old =  auto_folder + "i_x_i_00014.ckpt"
     print('start  auto load weight')
     i_x_i.load_weights(i_x_i_checkpoint_path_old)
@@ -208,7 +268,7 @@ if __name__ == '__main__':
     @tf.function
     def w_mse(y_true,y_pred):
         return kb.mean(kb.sum(y_true*(y_true-y_pred)**2))*0.008
-    i_x_j_path = "/work/baskargroup/bella/keras_3_models/data_efficient/models/without_g/100%/model_i_x_j.h5"
+    i_x_j_path = "/data/bella/data_efficient/models/without_g/100%/model_i_x_j.h5"
     i_x_j = i_x_j = load_model(i_x_j_path, custom_objects={'w_mse': w_mse})
     print('finish i_x_j model')
 
@@ -240,19 +300,20 @@ if __name__ == '__main__':
 
     # Add these lines after saving the latent space
     #train_latent_space = np.load(bella_model.save_folder + 'train_latent_space.npy')
-    # random 5 images 
-    num_images = train_image.shape[0]
+    # Train the PPO agent
+    log_folder = "/data/bella/data_efficient/coms590_rl/report/logs/"
+    ppo_agent = train_ppo_agent(i_x, x_i, x_j, train_images, modification_factor=0.1, total_timesteps=50, save_path=log_folder)
+
+    # Plot the training loss
+    plot_training_loss(log_folder)
+
+
+
     num_random_images = 5
-
     random_indices = np.random.randint(0, num_images, size=num_random_images)
-    random_images = train_image[random_indices]
+    random_test_images = test_image[random_indices]
 
-    bella_model.modify_and_decode_random_images(i_x,x_i,x_j, random_images)
-
-    # train the ppo
-    print('start training PPO')
-    ppo_agent = train_ppo_agent(i_x, x_i, x_j, train_images, max_iterations=100, modification_factor=0.1, total_timesteps=50000)
-    print('finish train ppo')
-
+    noise_factor = 0.1
+    modify_and_compare_images(bella_model, i_x, x_i, x_j, ppo_agent, random_test_images, modification_factor=0.1, noise_factor=noise_factor)
 
 
