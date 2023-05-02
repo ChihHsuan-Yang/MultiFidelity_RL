@@ -36,7 +36,7 @@ class LatentSpaceEnvironment(gym.Env):
         decoded_images = self.x_i.predict(np.array([self.train_latent_space]))
         predict_j = self.x_j.predict(np.array([self.train_latent_space]))
 
-        reward = np.mean(predict_j)
+        reward = np.sum(predict_j)  # Change reward function here
         self.iterations += 1
         done = self.iterations >= self.max_iterations
         info = {}
@@ -56,30 +56,40 @@ def train_ppo_agent(i_x, x_i, x_j, train_images, batch_size=64, modification_fac
     env = Monitor(env)  # Add Monitor wrapper
     env = DummyVecEnv([lambda: env])
 
-    checkpoint_callback = CheckpointCallback(save_freq=10000, save_path=save_path)  # Save the agent every 10000 steps
+    checkpoint_callback = CheckpointCallback(save_freq=100, save_path=save_path)  # Save the agent every 10000 steps
 
     model = PPO("MlpPolicy", env, verbose=1)
     model.learn(total_timesteps=total_timesteps, callback=checkpoint_callback)
 
     return model
-
 def plot_training_loss(log_folder, title="PPO Training Loss"):
-    results_plotter.plot_results([log_folder], total_timesteps=50000, results_per_file=None, title=title)
+    results_plotter.plot_results([log_folder], num_timesteps=None,x_axis ='timesteps' ,task_name = title)
+    plt.savefig(log_folder + 'training_timesteps.png')
     plt.show()
+    plt.close()
 
-def modify_image_with_ppo_agent(ppo_agent, i_x, x_i, modification_factor, input_image):
+    results_plotter.plot_results([log_folder], num_timesteps=None,x_axis ='episodes' ,task_name = title)
+    plt.savefig(log_folder + 'training_episodes.png')
+    plt.show()
+    plt.close()
+
+
+
+
+def modify_ls_with_ppo_agent(ppo_agent, i_x, x_i, modification_factor, input_image):
     # Convert input image to latent space representation
     latent_space = i_x.predict(np.expand_dims(input_image, axis=0))
+    print("Latent space shape:", latent_space.shape)
 
     # Get action (modification) from the PPO agent
+    print('start ppo_agent.predict')
     action, _ = ppo_agent.predict(latent_space)
+    print("Action shape:", action.shape)
 
     # Apply the action to the latent space representation
     modified_latent_space = latent_space + action * modification_factor
+    print("Modified latent space shape:", modified_latent_space.shape)
 
-    # Decode the modified latent space back to an image
-    modified_image = x_i.predict(modified_latent_space)
-
-    return modified_image.squeeze()
+    return modified_latent_space.squeeze()
 
 

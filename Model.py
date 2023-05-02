@@ -12,6 +12,7 @@ from keras import layers
 from keras.models import load_model
 from keras.layers import InputLayer
 import matplotlib.pyplot as plt
+import seaborn as sns
 from RL import *
 
 class BellaModel:
@@ -186,27 +187,37 @@ def extract_submodels(i_x_i, i_x_j):
 
     return i_x, x_j, x_i
 
-def modify_and_compare_images(model, i_x, x_i, x_j, ppo_agent, test_images, modification_factor, noise_factor):
+def modify_and_compare_images(model, i_x, x_i, x_j, ppo_agent, test_images, modification_factor):
     num_images = test_images.shape[0]
 
     # Get the latent space of the test images
     latent_space_test = i_x.predict(test_images)
 
     # Add random noise to the latent space
-    noisy_latent_space = latent_space_test + np.random.normal(0, noise_factor, latent_space_test.shape)
-
+    noisy_latent_space = latent_space_test + np.random.normal(0, modification_factor/3, latent_space_test.shape)
+    print('noisy_latent_space shape',noisy_latent_space.shape)
     # Get RL-modified latent spaces using the PPO agent
-    rl_latent_space = np.array([modify_image_with_ppo_agent(ppo_agent, i_x, x_i, modification_factor, test_images[i]) for i in range(num_images)])
-
+    print("start geting ls from agent")
+    rl_latent_space = np.array([modify_ls_with_ppo_agent(ppo_agent, i_x, x_i, modification_factor, test_images[i]) for i in range(num_images)])
+    print('pass the agent')
+    print('rl_latent_space shape',rl_latent_space.shape)
+    rl_latent_space = np.reshape(rl_latent_space, noisy_latent_space.shape)
     # Decode the latent spaces back to images
+    print('pass the agent and start x_i')
     initial_images = x_i.predict(latent_space_test)
+    print('get initial_images')
     noise_images = x_i.predict(noisy_latent_space)
+    print('get noise_images')
     rl_images = x_i.predict(rl_latent_space)
+    print('get rl_images')
 
     # Get predicted labels
     initial_labels = x_j.predict(latent_space_test)
+    print('get initial_labels')
     noise_labels = x_j.predict(noisy_latent_space)
+    print('get noise_labels')
     rl_labels = x_j.predict(rl_latent_space)
+    print('get rl_labels')
 
     # Plot the images and latent spaces
     fig, axes = plt.subplots(num_images, 6, figsize=(15, num_images * 2))
@@ -214,37 +225,74 @@ def modify_and_compare_images(model, i_x, x_i, x_j, ppo_agent, test_images, modi
     for i in range(num_images):
         # Initial image and latent space
         axes[i, 0].imshow(initial_images[i].squeeze(), cmap='gray')
-        axes[i, 0].set_title(f'Initial image\nLabel: {initial_labels[i]}')
+        axes[i, 0].set_title('Initial Reconstructed image')
         axes[i, 0].axis('off')
 
         axes[i, 1].imshow(latent_space_test[i].reshape(16, 16), cmap='gray')
-        axes[i, 1].set_title('Initial Latent Space')
+        axes[i, 1].set_title(f'Initial Latent Space\nLabel: {initial_labels[i]}')
         axes[i, 1].axis('off')
 
         # Noisy image and latent space
         axes[i, 2].imshow(noise_images[i].squeeze(), cmap='gray')
-        axes[i, 2].set_title(f'Noisy image\nLabel: {noise_labels[i]}')
+        axes[i, 2].set_title('Noisy reconstructed image')
         axes[i, 2].axis('off')
 
         axes[i, 3].imshow(noisy_latent_space[i].reshape(16, 16), cmap='gray')
-        axes[i, 3].set_title('Noisy Latent Space')
+        axes[i, 3].set_title(f'Noisy Latent Space\nLabel: {noise_labels[i]}')
         axes[i, 3].axis('off')
 
         # RL image and latent space
         axes[i, 4].imshow(rl_images[i].squeeze(), cmap='gray')
-        axes[i, 4].set_title(f'RL image\nLabel: {rl_labels[i]}')
+        axes[i, 4].set_title('RL reconstructed image')
         axes[i, 4].axis('off')
 
         axes[i, 5].imshow(rl_latent_space[i].reshape(16, 16), cmap='gray')
-        axes[i, 5].set_title('RL Latent Space')
+        axes[i, 5].set_title(f'RL Latent Space\nLabel: {rl_labels[i]}')
         axes[i, 5].axis('off')
 
     plt.tight_layout()
-    plt.savefig(Model.save_folder + f'comaparation_{modification_index}.png')
+    plt.savefig(model.save_folder + f'comaparation_{modification_factor}.png')
     plt.show()
 
 
+def analyze_images_with_noise_and_rl(model, i_x, x_i, x_j, ppo_agent, test_images, modification_factor):
+    num_images = test_images.shape[0]
 
+    # Get the latent space of the test images
+    latent_space_test = i_x.predict(test_images)
+
+    # Add random noise to the latent space
+    random_values = np.random.uniform(-modification_factor, modification_factor, latent_space_test.shape)
+    noisy_latent_space = latent_space_test + random_values
+    #noisy_latent_space = latent_space_test + np.random.normal(0, modification_factor/3, latent_space_test.shape)
+
+    # Get RL-modified latent spaces using the PPO agent
+    rl_latent_space = np.array([modify_ls_with_ppo_agent(ppo_agent, i_x, x_i, modification_factor, test_images[i]) for i in range(num_images)])
+    rl_latent_space = np.reshape(rl_latent_space, noisy_latent_space.shape)
+    # Get predicted labels
+    initial_labels = x_j.predict(latent_space_test)
+    noise_labels = x_j.predict(noisy_latent_space)
+    rl_labels = x_j.predict(rl_latent_space)
+
+    # Plot scatter plots
+    plt.figure(figsize=(10, 5))
+    plt.scatter(initial_labels, noise_labels, color='royalblue', label='Noise', alpha=0.5)
+    plt.scatter(initial_labels, rl_labels, color='limegreen', label='RL', alpha=0.5)
+    plt.xlabel('Initial Label')
+    plt.ylabel('Modified Label')
+    plt.legend()
+    plt.title('Scatter plot of Noise vs RL modifications')
+    plt.savefig(model.save_folder + 'scatter_plot.png')
+    plt.show()
+
+    # Plot box plot
+    plt.figure(figsize=(10, 5))
+    sns.boxplot(data=[noise_labels - initial_labels, rl_labels - initial_labels], orient="h", palette="Set2")
+    plt.yticks([0, 1], ['Noise', 'RL'])
+    plt.xlabel('Difference (Modified - Initial)')
+    plt.title('Box plot of differences between RL and Noise modifications')
+    plt.savefig(model.save_folder + f'box_plot_difference{modification_factor}.png')
+    plt.show()
 
 if __name__ == '__main__':
     
@@ -301,19 +349,25 @@ if __name__ == '__main__':
     # Add these lines after saving the latent space
     #train_latent_space = np.load(bella_model.save_folder + 'train_latent_space.npy')
     # Train the PPO agent
+    
     log_folder = "/data/bella/data_efficient/coms590_rl/report/logs/"
-    ppo_agent = train_ppo_agent(i_x, x_i, x_j, train_images, modification_factor=0.1, total_timesteps=50, save_path=log_folder)
-
+    ppo_agent = train_ppo_agent(i_x, x_i, x_j, train_image, modification_factor=0.5, total_timesteps=150000, save_path=log_folder)
+    
+    #model_file_path = "/data/bella/data_efficient/coms590_rl/report/logs_03/"+"rl_model_151500_steps.zip"
+    #ppo_agent = PPO.load(model_file_path)
+    print('finish load rl agent')
     # Plot the training loss
-    plot_training_loss(log_folder)
+    #plot_training_loss(log_folder)
 
 
-
-    num_random_images = 5
+    num_images = test_image.shape[0]
+    num_random_images = 10
     random_indices = np.random.randint(0, num_images, size=num_random_images)
     random_test_images = test_image[random_indices]
+    print('start run the comparison')
 
-    noise_factor = 0.1
-    modify_and_compare_images(bella_model, i_x, x_i, x_j, ppo_agent, random_test_images, modification_factor=0.1, noise_factor=noise_factor)
-
+    modification_factor = 0.5
+    modify_and_compare_images(bella_model, i_x, x_i, x_j, ppo_agent, random_test_images, modification_factor = modification_factor)
+    print('modify_and_compare_images')
+    analyze_images_with_noise_and_rl(bella_model, i_x, x_i, x_j, ppo_agent, test_image, modification_factor)
 
